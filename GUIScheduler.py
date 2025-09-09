@@ -14,7 +14,8 @@ from PyQt5.QtCore import Qt, QSettings, QThread, pyqtSignal, QTime, QTimer, QMut
 from PyQt5.QtGui import QIcon, QFont, QColor
 import schedule
 from khQTTools import KhQuTools
-
+import subprocess
+import platform
 
 def supplement_data_worker(params, progress_queue, result_queue, stop_event):
     """
@@ -1295,8 +1296,6 @@ class GUIScheduler(QMainWindow):
             
             if os.path.exists(custom_file):
                 # 使用系统默认程序打开文件
-                import subprocess
-                import platform
                 
                 if platform.system() == 'Windows':
                     os.startfile(custom_file)

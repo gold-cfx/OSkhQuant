@@ -26,6 +26,7 @@ from GUIplotLoadData import StockDataAnalyzerGUI  # 添加这一行导入
 from update_manager import UpdateManager  # 将之前的UpdateManager类保存在单独的update_manager.py文件中
 from version import get_version_info  # 导入版本信息
 from SettingsDialog import SettingsDialog
+from datetime import datetime
 
 # 自定义控件类，禁用滚轮事件
 class NoWheelComboBox(QComboBox):
@@ -2806,7 +2807,7 @@ class StockDataProcessorGUI(QMainWindow):
         settings = QSettings('KHQuant', 'StockAnalyzer')
         
         # 设置合理的默认日期：今年年初到今天
-        from datetime import datetime
+
         current_year = datetime.now().year
         today = datetime.now()
         default_start_date = QDate(current_year, 1, 1)

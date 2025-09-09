@@ -1,0 +1,77 @@
+{
+    "system": {
+        "userdata_path": "D:/东北证券NET专业版/userdata_mini"
+    },
+    "run_mode": "backtest",
+    "account": {
+        "account_id": "27113139",
+        "account_type": "STOCK"
+    },
+    "strategy_file": "D:/code/OSkhQuant/strategies/one/趋势1.py",
+    "data_mode": "custom",
+    "backtest": {
+        "start_time": "20250101",
+        "end_time": "20250912",
+        "init_capital": 1000000.0,
+        "min_volume": 100,
+        "benchmark": "sh.000300",
+        "trade_cost": {
+            "min_commission": 5.0,
+            "commission_rate": 0.0001,
+            "stamp_tax_rate": 0.0005,
+            "flow_fee": 0.0,
+            "slippage": {
+                "type": "tick",
+                "tick_size": 0.01,
+                "tick_count": 0,
+                "ratio": 0.001
+            }
+        },
+        "trigger": {
+            "type": "1d",
+            "custom_times": [],
+            "start_time": "09:30:00",
+            "end_time": "15:00:00",
+            "interval": 300
+        }
+    },
+    "data": {
+        "kline_period": "1d",
+        "dividend_type": "front",
+        "fields": [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "amount",
+            "settelementPrice",
+            "openInterest",
+            "preClose",
+            "suspendFlag"
+        ],
+        "stock_list": [
+            "000759.SZ",
+            "300025.SZ",
+            "002991.SZ",
+            "301062.SZ",
+            "301030.SZ",
+            "688408.SH",
+            "002449.SZ",
+            "600609.SH",
+            "301383.SZ",
+            "300783.SZ"
+        ]
+    },
+    "market_callback": {
+        "pre_market_enabled": false,
+        "pre_market_time": "08:30:00",
+        "post_market_enabled": false,
+        "post_market_time": "15:30:00"
+    },
+    "risk": {
+        "position_limit": 0.95,
+        "order_limit": 100,
+        "loss_limit": 0.1
+    }
+}

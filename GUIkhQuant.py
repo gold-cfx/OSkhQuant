@@ -1540,7 +1540,7 @@ class KhQuantGUI(QMainWindow):
             
             # 创建复选框
             cb = QCheckBox()
-            cb.stateChanged.connect(lambda state, code=code: self.on_pool_changed(code, state))
+            cb.stateChanged.connect(lambda _state, _code=code: self.on_pool_changed(_code, _state))
             self.pool_checkboxes[code] = cb
             
             # 创建标签并关联到复选框

@@ -11,7 +11,8 @@ from PyQt5.QtCore import Qt, QSettings, QThread, pyqtSignal, QEvent, QDate, QMut
 from PyQt5.QtGui import QIcon, QFont, QColor
 import pandas as pd
 import logging
-
+import subprocess
+import platform
 
 class LoadingDialog(QDialog):
     """加载进度对话框"""
@@ -2685,9 +2686,7 @@ class MiniQMTDataViewer(QMainWindow):
             
             if os.path.exists(custom_file):
                 # 使用系统默认程序打开文件
-                import subprocess
-                import platform
-                
+
                 if platform.system() == 'Windows':
                     os.startfile(custom_file)
                 elif platform.system() == 'Darwin':  # macOS
