@@ -1,5 +1,5 @@
 from khQuantImport import *  # 导入统一工具与指标
-from utils.base import *
+from utils.three_not_high import *
 
 
 def init(stocks=None, data=None):  # 初始化（无需特殊处理）
@@ -20,17 +20,16 @@ def khHandlebar(data: Dict) -> List[Dict]:  # 主策略函数
             now_c = c[-1]
 
             av = calc_annual_volatility(close_hist[sc]['close'].values)
-            h_p = ma5_now * (1 + av / 4)
+            l_p = ma5_now * (1 - av / 4)
 
             p = khPrice(data, sc, "open")  # 当日开盘价
-            if p >= ma20_now and not khHas(data, sc):
-                signals.extend(generate_signal(data, sc, p, 0.2, "buy", f"{sc[:6]} 逃顶：买入"))
+            if now_c <= l_p and not khHas(data, sc):
+                signals.extend(generate_signal(data, sc, p, 0.2, "buy", f"{sc[:6]} 抄底：超跌"))
 
             # =================
-            if now_c >= h_p and khHas(data, sc):
-                signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 逃顶：逃顶"))
 
-
+            if p >= ma20_now and khHas(data, sc):
+                signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 抄底：回20日"))
 
         except Exception as e:
             logging.error(f"=cfx= {sc} 执行策略失败: {str(e)}")

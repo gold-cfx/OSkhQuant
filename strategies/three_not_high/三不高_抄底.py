@@ -1,6 +1,8 @@
 from khQuantImport import *  # 导入统一工具与指标
 from utils.base import *
 
+from utils.three_not_high import calc_annual_volatility
+
 
 def init(stocks=None, data=None):  # 初始化（无需特殊处理）
     """策略初始化（本策略无需特殊初始化）"""
@@ -42,6 +44,7 @@ def khHandlebar(data: Dict) -> List[Dict]:  # 主策略函数
             down = not all_gt
 
             av = calc_annual_volatility(close_hist[sc]['close'].values)
+            high_20 = max(close_hist[sc]['close'].values[-31:-1])
             l_p = ma5_now * (1 - av/4)
             h_p = ma5_now * (1 + av/4)
 
@@ -56,8 +59,8 @@ def khHandlebar(data: Dict) -> List[Dict]:  # 主策略函数
             if down and not up and khHas(data, sc):
                 signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 三不高：全低"))
             # 视情况而定，有时好，有时坏
-            if now_c >= h_p and khHas(data, sc):
-                signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 三不高：逃顶"))
+            # if now_c >= h_p and khHas(data, sc):
+            #     signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 三不高：逃顶"))
 
         except Exception as e:
             logging.error(f"=cfx= {sc} 执行策略失败: {str(e)}")
