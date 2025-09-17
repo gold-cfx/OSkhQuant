@@ -1,7 +1,8 @@
-from utils.large_money import calc_large_money
+from utils.large_money import calc_large_money_and_sell
 from utils.three_not_high import *
 
 my_stocks = []
+my_sell = []
 pos = {}
 
 
@@ -15,34 +16,31 @@ def init(stocks=None, data=None):  # 初始化（无需特殊处理）
 def khPreMarket(data: Dict) -> List[Dict]:
     dn = khGet(data, "date_num")  # 当前日期(数值格式)
     ss = khGet(data, "stocks")
-    global my_stocks, pos
+    global my_stocks, pos, my_sell
     if pos:
         for k, v in pos.items():
             pos[k] += 1
     my_stocks = []
+    my_sell = []
     for sc in ss:
         hit = khHistory(sc, ["close", "high", "low", "open", "amount"], 120, "1d", dn, fq="pre", force_download=False)
-        _, ok = calc_large_money(sc, hit[sc], 5, 60, 1.5)
-        if ok:
+        _, ok, sell, warn, limit_sell = calc_large_money_and_sell(sc, hit[sc], 5, 60, 1.8)
+        if ok and not khHas(data, sc):
             my_stocks.append(sc)
+        if (sell or warn or limit_sell) and not ok and khHas(data, sc):
+            my_sell.append(sc)
+
     return []
 
 
 def khHandlebar(data: Dict) -> List[Dict]:  # 主策略函数
     signals = []  # 信号列表
-    ss = max(0.1, 1 / len(my_stocks)) if my_stocks else 1.0
     for sc in my_stocks:  # 遍历股票池
         p = khPrice(data, sc, "open")  # 当日开盘价
         # 持有周期会根据信号的个数延长N天
-        if pos.get(sc):
-            pos[sc] -= 1
-        else:
-            pos[sc] = 1
-            signals.extend(generate_signal(data, sc, p, ss, "buy", f"{sc[:6]} 资金流"))
-    pos_copy = pos.copy()  # 创建字典的浅拷贝
-    for sc, v in pos_copy.items():
-        if v >= 34:
-            del pos[sc]
-            p = khPrice(data, sc, "open")  # 当日开盘价
-            signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 资金流到期"))
+        signals.extend(generate_signal(data, sc, p, 0.1, "buy", f"{sc[:6]} 资金流"))
+
+    for sc in my_sell:
+        p = khPrice(data, sc, "open")  # 当日开盘价
+        signals.extend(generate_signal(data, sc, p, 1.0, "sell", f"{sc[:6]} 触发卖出"))
     return signals  # 返回信号
