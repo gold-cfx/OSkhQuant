@@ -7,7 +7,7 @@
         "account_id": "20200124",
         "account_type": "STOCK"
     },
-    "strategy_file": "C:/Farmar/code/OSkhQuant/strategies/money/cash_flow.py",
+    "strategy_file": "C:/Farmar/code/OSkhQuant/strategies/money/cash_flow_and_sell.py",
     "data_mode": "custom",
     "backtest": {
         "start_time": "20240101",

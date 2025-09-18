@@ -2,6 +2,7 @@
 import datetime
 import re
 
+import numpy as np
 import pandas as pd
 
 # ======================== 可修改区域 ========================
@@ -49,7 +50,38 @@ def is_stock(code):
     return bool(re.match(pattern, str(code)))
 
 
-def calc_large_money(C, code, df, fast=5, slow=60, x=1.5):
+def write_stocks(file_path, list_stocks):
+    with open(file_path, 'a') as f:
+        for stock_code in list_stocks:
+            f.write(f"{stock_code}\r\n")
+
+
+def run_once_successfully(func):
+    """
+    装饰器：确保函数成功执行一次
+    如果执行失败（抛出异常），则下次调用时继续执行
+    """
+    memo = {}  # 存储函数执行结果或异常状态
+
+    def wrapper(*args, **kwargs):
+        if func in memo:
+            # 如果已经成功执行过，直接返回结果
+            if not isinstance(memo[func], Exception):
+                return memo[func]
+            # 如果之前执行失败，继续执行函数
+
+        try:
+            result = func(*args, **kwargs)
+            memo[func] = result  # 存储成功结果
+            return result
+        except Exception as e:
+            memo[func] = e  # 存储异常，下次调用继续尝试
+            raise  # 抛出异常，但不会阻止下次调用
+
+    return wrapper
+
+
+def calc_large_money(C, code, df, fast=5, slow=60, x=1.5, fast_power_t=250, slow_power_t=3000):
     """
     用2025年1.1-9.16全量数据测试（不考虑仓位、资金）
     如果选用5，60，1.3的参数，出现信号后买入
@@ -82,17 +114,25 @@ def calc_large_money(C, code, df, fast=5, slow=60, x=1.5):
             df['float_vol'] = 100000000 * 10
     else:
         df['float_vol'] = 100000000 * 10
-    ma_slow = df['close'].rolling(window=slow).mean().values[-1]
+    ma_slow_value = df['close'].rolling(window=slow).mean().values[-1]
     df['fast_cash_flow_power'] = df['fast_day_cash_flow'] / df['float_vol'] * df['close']
-    df['slow_cash_flow_power'] = df['slow_day_cash_flow'] / df['float_vol'] * ma_slow
+    df['slow_cash_flow_power'] = df['slow_day_cash_flow'] / df['float_vol'] * ma_slow_value
     df['ma_fast_cash_flow_power'] = df['fast_cash_flow_power'].abs().rolling(window=slow).mean()
+    df['ma_slow_cash_flow_power'] = df['slow_cash_flow_power'].abs().rolling(window=fast).mean()
     # 计算条件
-    df['is_ok'] = (df['slow_day_cash_flow'] > 0) & (df['fast_day_cash_flow'] < 0) & (
-            df['fast_cash_flow_power'].abs() > df['ma_fast_cash_flow_power'] * x)
+    df['slow_power_threshold'] = np.maximum(fast_power_t, df['ma_fast_cash_flow_power'] * x)
+
+    cond1 = df['slow_day_cash_flow'] > 0
+    cond2 = df['slow_cash_flow_power'] <= slow_power_t
+    cond3 = df['fast_day_cash_flow'] < 0
+    cond4 = df['fast_cash_flow_power'].abs() > df["slow_power_threshold"]
+
+    df['is_ok'] = cond1 & cond2 & cond3 & cond4
+
     return df, df['is_ok'].values[-1]
 
 
-def calc_large_money_and_sell(C, code, df, fast=5, slow=60, x=1.5, n=34):
+def calc_large_money_and_sell(C, code, df, fast=5, slow=60, x=1.5):
     """
     用2025年1.1-9.16全量数据测试（不考虑仓位、资金）
     如果选用5，60，1.3的参数，出现信号后买入
@@ -107,61 +147,37 @@ def calc_large_money_and_sell(C, code, df, fast=5, slow=60, x=1.5, n=34):
     """
     df, _ = calc_large_money(C, code, df, fast, slow, x)
     df['ma_slow_day_cash_flow'] = df['slow_day_cash_flow'].rolling(window=slow).mean()
-    df["is_sell"] = (df['slow_day_cash_flow'] < 0) & (df['fast_day_cash_flow'] > 0) & (
-            df['fast_cash_flow_power'].abs() > df['ma_fast_cash_flow_power'] * x)
-    df["is_warn"] = (df['slow_day_cash_flow'] < df['ma_slow_day_cash_flow']) & (df['slow_day_cash_flow'] > 0) & (
-            df['fast_day_cash_flow'] > 0) & (df['fast_cash_flow_power'].abs() > df['ma_fast_cash_flow_power'] * x)
+    cond1 = df['slow_day_cash_flow'] < 0
+    cond2 = df['fast_day_cash_flow'] > 0
+    cond3 = df['fast_cash_flow_power'].abs() > df["slow_power_threshold"]
+    cond4 = df['slow_day_cash_flow'] < df['ma_slow_day_cash_flow']
+    cond5 = df['slow_day_cash_flow'] > 0
+    cond6 = df['fast_day_cash_flow'] < 0
 
-    df['is_add'] = (df['slow_day_cash_flow'] < 0) & (df['fast_day_cash_flow'] < 0) & (
-            df['fast_cash_flow_power'].abs() > df['ma_fast_cash_flow_power'] * x)
+    df["is_sell"] = cond1 & cond2 & cond3
+    df["is_warn"] = cond4 & cond5 & cond3
+    df['is_add'] = cond1 & cond6 & cond3
 
-    df['limit_sell'] = False
+    return df
+
+
+def calc_large_money_and_sell_and_limit(C, code, df, fast=5, slow=60, x=1.5, n=34):
+    df = calc_large_money_and_sell(C, code, df, fast=fast, slow=slow, x=x)
+    df['date'] = df['time'].dt.strftime('%y-%m-%d')
+    df['limit_day'] = None
+    queue = []  # 保存每个 is_ok 的到期索引
     len_df = len(df)
     for i in range(len_df):
         if df.at[i, 'is_ok']:
             # 检查其后的 N 行数据
-            subsequent_rows = df.iloc[i + 1:i + 1 + n]
-
-            # 检查是否有 is_sell 或 is_warn 为 true
-            if not subsequent_rows['is_sell'].any() and not subsequent_rows['is_warn'].any():
-                # 如果没有，则在第 N+1 行数据中设置 limit_sell 为 true
-                # 且n增加is_ok出现的次数
-                add_day = subsequent_rows['is_ok'].sum()
-                if i + 1 + n + add_day < len_df:
-                    df.at[i + 1 + n, 'limit_sell'] = True
-
-    return df, df['is_ok'].values[-1], df['is_sell'].values[-1], df['is_warn'].values[-1], df['limit_sell'].values[-1]
-
-
-def write_stocks(file_path, list_stocks):
-    with open(file_path, 'a') as f:
-        for stock_code in list_stocks:
-            f.write(f"{stock_code}\r\n")
-
-
-def run_once_successfully(func):
-    """
-    装饰器：确保函数成功执行一次
-    如果执行失败（抛出异常），则下次调用时继续执行
-    """
-    memo = {}  # 存储函数执行结果或异常状态
-
-    def wrapper(*args, **kwargs):
-        if func in memo:
-            # 如果已经成功执行过，直接返回结果
-            if not isinstance(memo[func], Exception):
-                return memo[func]
-            # 如果之前执行失败，继续执行函数
-
-        try:
-            result = func(*args, **kwargs)
-            memo[func] = result  # 存储成功结果
-            return result
-        except Exception as e:
-            memo[func] = e  # 存储异常，下次调用继续尝试
-            raise  # 抛出异常，但不会阻止下次调用
-
-    return wrapper
+            add_day = df.iloc[i + 1:i + n]['is_ok'].sum()
+            expire = (i + n + add_day, df.at[i, 'date'])
+            queue.append(expire)
+    for item in queue:
+        if item[0] >= len_df:
+            continue
+        df.at[item[0], 'limit_day'] = item[1]
+    return df, df['is_ok'].values[-1], df['limit_day'].values[-1]
 
 
 @run_once_successfully
@@ -183,10 +199,10 @@ def calc_today_police(C):
     print("开始计算指标")
     buy_list, sell_list = [], []
     for stock_code, df in C.history_data.items():
-        _, is_ok, is_sell, is_warn, limit_sell = calc_large_money_and_sell(C, stock_code, df, x=1.5, n=35)
-        if is_ok and stock_code not in position_list:
+        _, buy, sell = calc_large_money_and_sell_and_limit(C, stock_code, df, x=1.5, n=35)
+        if buy and stock_code not in position_list:
             buy_list.append(stock_code)
-        elif stock_code in position_list and (is_sell or is_warn or limit_sell) and not is_ok:
+        elif stock_code in position_list and sell:
             sell_list.append(stock_code)
     print("开始写入数据 buy_list: ", buy_list)
     write_stocks(C.need_buy_file, buy_list)
@@ -202,4 +218,5 @@ def init(C):
 
 
 def my_handlebar(C):
+    # todo 股票太多，可以根据市值，价格来选
     calc_today_police(C)
