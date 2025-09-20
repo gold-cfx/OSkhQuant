@@ -64,7 +64,7 @@ def load_vol_half(C, code: str) -> float:
     cache = {}
     today = dt.date.today().isoformat()
     if os.path.exists(VOL_HALF_CACHE):
-        with open(VOL_HALF_CACHE, 'r', encoding='utf-8') as f:
+        with open(VOL_HALF_CACHE, 'r', encoding='gbk') as f:
             cache = json.load(f)
         if cache.get(today) and code in cache[today]:
             return float(cache[today][code])
@@ -78,7 +78,7 @@ def load_vol_half(C, code: str) -> float:
     else:
         cache = {today: {code: vol_half}}
     print(cache)
-    with open(VOL_HALF_CACHE, 'w', encoding='utf-8') as f:
+    with open(VOL_HALF_CACHE, 'w', encoding='gbk') as f:
         json.dump(cache, f)
     return vol_half
 
@@ -122,16 +122,17 @@ def should_sell(C, code: str, vol_half: float) -> bool:
     drawdown = (high_since_buy - last_price) / high_since_buy
 
     # 3) 亏损计算：同样用 NumPy 标量
-    loss = (order_price - last_price) / order_price
+    loss = (last_price - order_price) / order_price
     # print(drawdown, vol_half, loss)
     # 4) 任一满足即卖出
-    if np.logical_or(drawdown >= vol_half, loss >= 0.05):
-        print(f"[{dt.datetime.now():%Y-%m-%d %H:%M:%S}] "
-              f"{code} 触发卖出：回撤={drawdown:.2%} 亏损={loss:.2%}")
+    if np.logical_or(drawdown >= vol_half, loss * 100 <= -5):
+        print(f"{code} 触发卖出：回撤={drawdown:.2%} 亏损={loss:.2%}")
         return True, last_price
     else:
-        print(f"[{dt.datetime.now():%Y-%m-%d %H:%M:%S}] "
-              f"{code} 盈利信息：回撤={drawdown:.2%} 盈利={abs(loss):.2%}")
+        if loss > 0:
+            print(f"{code} 盈利信息：回撤={drawdown:.2%} 盈利={loss:.2%}")
+        else:
+            print(f"{code} 盈利信息：回撤={drawdown:.2%} 亏损={loss:.2%}")
     return False, None
 
 
@@ -182,7 +183,7 @@ def check_order(C, stock_code):
 
 
 def write_order(text):
-    with open(ORDER_CACHE, 'a') as f:
+    with open(ORDER_CACHE, 'a', encoding='gbk') as f:
         f.write(f"{text}\r\n")
 
 
@@ -192,7 +193,7 @@ def write_order_info(order_type, code, volume, price):
 
 
 def read_file_backwards(file_name, max_line=1000):
-    with open(file_name, 'r', encoding='utf-8') as file:
+    with open(file_name, 'r', encoding='gbk') as file:
         lines = deque(file, max_line)  # 1000是缓冲区大小，可以根据需要调整
         lines.reverse()
         return lines
@@ -236,6 +237,8 @@ def parse_log_line(line):
 
 
 def my_handlebar(C):
+    print("")
+    print("============================================")
     for stock_code, vol in C.position_info.items():
         vol_half = load_vol_half(C, stock_code)
         if np.isnan(vol_half):
@@ -252,4 +255,4 @@ def my_handlebar(C):
                     sell_vol = int(vol / 100) * 100
                     write_order_info(24, stock_code, sell_vol, last_price)
                     passorder(24, 1101, C.account, stock_code, 5, 0, sell_vol, 2, C)
-                    print(f"{stock_code}卖出成功，sell_vol：{sell_vol}， last_price：{last_price}")
+                    print(f"{stock_code} 卖出成功，sell_vol：{sell_vol}， last_price：{last_price}")

@@ -16,7 +16,7 @@ class Config:
     MAX_BUY_ATTEMPTS = 5
 
     # 文件路径配置
-    ORDER_CACHE_FILE = r'C:\Users\Farmar\Desktop\交易记录.txt'
+    ORDER_CACHE_FILE = r'C:\Users\Farmar\Desktop\订单记录.txt'
     BUY_STOCK_FILE = r'C:\Users\Farmar\Desktop\需持有股票.txt'
     SELL_STOCK_FILE = r'C:\Users\Farmar\Desktop\需卖出股票.txt'
 
@@ -24,7 +24,7 @@ class Config:
     TRADING_SCHEDULES = [
         ('092440', '092457', '集合竞价'),
         ('092500', '092957', '集合成交'),
-        ('093000', '094000', '交易时段'),
+        ('093000', '150000', '交易时段'),
     ]
 
     # 逆回购时间范围
@@ -37,10 +37,10 @@ class TradingStatus:
     ENTRUST_REPORTED = 50  # 已报（已报出到柜台，待成交）
 
     # 股票状态
-    STOCK_SKIP = -1
-    STOCK_AVAILABLE = 0
-    STOCK_IN_ORDER = 1
-    STOCK_IN_POSITION = 2
+    STOCK_SKIP = "忽略"
+    STOCK_AVAILABLE = "可用"
+    STOCK_IN_ORDER = "委托中"
+    STOCK_IN_POSITION = "持仓中"
 
     # 订单类型
     ORDER_BUY = 23
@@ -78,16 +78,6 @@ class TradingContext:
             index = self.stock_info[stock_code]['index']
             if index < len(self.stock_status):
                 self.stock_status[index] = status
-
-
-def init(C):
-    """系统初始化"""
-    print('策略启动')
-    C.context = TradingContext()
-    C.context.reset()
-    C.set_account(C.context.account)
-    print("初始化完成")
-    C.run_time("myHandlebar", "3nSecond", "2023-06-20 13:20:00")
 
 
 class StockUtils:
@@ -141,82 +131,88 @@ class FileManager:
             print(f"写入交易日志失败: {e}")
 
 
-def load_stock_data(C, context):
+def load_stock_data(C, my_context):
     """加载股票数据"""
     # 读取买入和卖出股票列表
-    context.buy_stocks = FileManager.read_stock_file(Config.BUY_STOCK_FILE, "买入股票")
-    context.sell_stocks = FileManager.read_stock_file(Config.SELL_STOCK_FILE, "卖出股票")
+    my_context.buy_stocks = FileManager.read_stock_file(Config.BUY_STOCK_FILE, "买入股票")
+    my_context.sell_stocks = FileManager.read_stock_file(Config.SELL_STOCK_FILE, "卖出股票")
 
-    print(f"买入股票列表: {context.buy_stocks}")
-    print(f"卖出股票列表: {context.sell_stocks}")
+    print(f"买入股票列表: {my_context.buy_stocks}")
+    print(f"卖出股票列表: {my_context.sell_stocks}")
 
     # 初始化买入股票状态
-    for i, stock_code in enumerate(context.buy_stocks):
+    for i, stock_code in enumerate(my_context.buy_stocks):
         # 检查买卖冲突（卖出优先策略）
-        if stock_code in context.sell_stocks:
-            context.stock_status.append(TradingStatus.STOCK_SKIP)
-            context.buy_attempts.append(0)
-            context.stock_info[stock_code] = {'index': i, 'name': f"卖出优先-{stock_code}"}
+        if stock_code in my_context.sell_stocks:
+            my_context.stock_status.append(TradingStatus.STOCK_SKIP)
+            my_context.buy_attempts.append(0)
+            my_context.stock_info[stock_code] = {'index': i, 'name': f"卖出优先-{stock_code}"}
             continue
 
         # 获取股票名称并检查ST股票
         stock_name = C.get_stock_name(stock_code)
         if StockUtils.is_st_stock(stock_code, stock_name):
-            context.stock_status.append(TradingStatus.STOCK_SKIP)
+            my_context.stock_status.append(TradingStatus.STOCK_SKIP)
         else:
-            context.stock_status.append(TradingStatus.STOCK_AVAILABLE)
+            my_context.stock_status.append(TradingStatus.STOCK_AVAILABLE)
 
-        context.buy_attempts.append(0)
-        context.stock_info[stock_code] = {'index': i, 'name': stock_name}
+        my_context.buy_attempts.append(0)
+        my_context.stock_info[stock_code] = {'index': i, 'name': stock_name}
 
 
-def refresh_stock_status(context: TradingContext):
+def refresh_stock_status(my_context: TradingContext):
     """刷新股票状态"""
     # 重置非跳过状态的股票为可用状态
-    for i, status in enumerate(context.stock_status):
+    for i, status in enumerate(my_context.stock_status):
         if status != TradingStatus.STOCK_SKIP:
-            context.stock_status[i] = TradingStatus.STOCK_AVAILABLE
+            my_context.stock_status[i] = TradingStatus.STOCK_AVAILABLE
 
     # 更新委托状态
     try:
-        orders = get_trade_detail_data(context.account, 'stock', 'order')
+        print("开始查询委托状态")
+        orders = get_trade_detail_data(my_context.account, 'stock', 'order')
         for order in orders:
             if order.m_nOrderStatus == TradingStatus.ENTRUST_REPORTED:
                 stock_code = f"{order.m_strInstrumentID}.{order.m_strExchangeID}"
-                context.set_stock_status(stock_code, TradingStatus.STOCK_IN_ORDER)
+                my_context.set_stock_status(stock_code, TradingStatus.STOCK_IN_ORDER)
+                print(f"{stock_code} 查询到委托订单")
     except Exception as e:
         print(f"获取委托信息失败: {e}")
 
     # 更新持仓状态
     try:
-        positions = get_trade_detail_data(context.account, 'stock', 'position')
+        print("开始查询持仓状态")
+        positions = get_trade_detail_data(my_context.account, 'stock', 'position')
         for position in positions:
             stock_code = f"{position.m_strInstrumentID}.{position.m_strExchangeID}"
-            context.set_stock_status(stock_code, TradingStatus.STOCK_IN_POSITION)
+            my_context.set_stock_status(stock_code, TradingStatus.STOCK_IN_POSITION)
+            print(f"{stock_code} 查询到持仓订单")
     except Exception as e:
         print(f"获取持仓信息失败: {e}")
 
     # 标记买入次数过多的股票
-    for i, attempts in enumerate(context.buy_attempts):
+    for i, attempts in enumerate(my_context.buy_attempts):
         if attempts > Config.MAX_BUY_ATTEMPTS:
-            context.stock_status[i] = TradingStatus.STOCK_SKIP
+            my_context.stock_status[i] = TradingStatus.STOCK_SKIP
+    print(f"刷新股票状态：{my_context.stock_status}")
 
 
 class OrderManager:
     """订单管理类"""
 
     @staticmethod
-    def cancel_timeout_orders(context: TradingContext, trading_phase):
+    def cancel_timeout_orders(my_context: TradingContext, trading_phase):
         """取消超时订单"""
         if trading_phase != "交易时段":
             return
 
         try:
-            orders = get_trade_detail_data(context.account, 'stock', 'order')
+            print("开始查询超时订单")
+            orders = get_trade_detail_data(my_context.account, 'stock', 'order')
             current_time = datetime.datetime.now()
 
             for order in orders:
-                if not can_cancel_order(order.m_strOrderSysID, context.account, 'STOCK'):
+                if not can_cancel_order(order.m_strOrderSysID, my_context.account, 'STOCK'):
                     continue
 
                 order_time = datetime.datetime.strptime(
@@ -224,9 +220,9 @@ class OrderManager:
                 )
 
                 if ((current_time - order_time).seconds > 10 and
-                        order.m_strOrderSysID not in context.cancelled_orders):
-                    cancel_order_stock(context.account, order.m_strOrderSysID)
-                    context.cancelled_orders.add(order.m_strOrderSysID)
+                        order.m_strOrderSysID not in my_context.cancelled_orders):
+                    cancel_order_stock(my_context.account, order.m_strOrderSysID)
+                    my_context.cancelled_orders.add(order.m_strOrderSysID)
                     print(f"取消超时订单: {order.m_strOrderSysID}")
 
         except Exception as e:
@@ -273,12 +269,14 @@ class TradingValidator:
         return True, "验证通过"
 
 
-def execute_buy_order(C, context, stock_code, stock_info, trading_phase, available_money):
+def execute_buy_order(C, my_context, stock_code, stock_info, trading_phase, available_money):
     """执行买入订单"""
     try:
         last_price = stock_info['lastPrice']  # 最新价
         bid_price = stock_info['bidPrice'][0]  # 委买价
         bid_vol = stock_info['bidVol'][0]  # 委买量
+        ask_price = stock_info['askPrice'][0]  # 委卖价
+        ask_vol = stock_info['askVol'][0]  # 委卖价
 
         if abs(last_price) < Config.EPS:
             last_price = bid_price
@@ -297,17 +295,17 @@ def execute_buy_order(C, context, stock_code, stock_info, trading_phase, availab
             return False, available_money, "买入量不足"
 
         # 检查委托量
-        if buy_num >= bid_vol * 10:
-            return False, available_money, "委托量过大"
+        if buy_num >= ask_vol * 100 * 10:
+            return False, available_money, f"委托量过大: buy_num: {buy_num}, bid_vol: {bid_vol}"
 
         # 执行买入
         FileManager.write_order_log(TradingStatus.ORDER_BUY, stock_code, buy_num, buy_price)
-        passorder(TradingStatus.ORDER_BUY, 1101, context.account, stock_code, 11, buy_price, buy_num, 2, C)
+        passorder(TradingStatus.ORDER_BUY, 1101, my_context.account, stock_code, 11, buy_price, buy_num, 2, C)
 
         # 更新状态
-        stock_index = context.stock_info[stock_code]['index']
-        context.stock_status[stock_index] = TradingStatus.STOCK_IN_ORDER
-        context.buy_attempts[stock_index] += 1
+        stock_index = my_context.stock_info[stock_code]['index']
+        my_context.stock_status[stock_index] = TradingStatus.STOCK_IN_ORDER
+        my_context.buy_attempts[stock_index] += 1
 
         new_available_money = available_money - buy_num * buy_price * 1.0002
         print(f"买入成功: {stock_code} 价格:{buy_price} 数量:{buy_num}")
@@ -317,30 +315,31 @@ def execute_buy_order(C, context, stock_code, stock_info, trading_phase, availab
         return False, available_money, f"买入失败: {e}"
 
 
-def process_sell_orders(C, context):
+def process_sell_orders(C, my_context):
     """处理卖出订单（优先执行）"""
-    if not context.sell_stocks:
+    if not my_context.sell_stocks:
         return
 
     try:
         # 获取当前持仓
-        positions = get_trade_detail_data(context.account, 'stock', 'position')
+        positions = get_trade_detail_data(my_context.account, 'stock', 'position')
         if not positions:
-            print("没有持仓信息")
+            print("没有持仓信息，暂停卖出！")
             return
 
-        print(f"开始处理卖出订单，卖出列表: {context.sell_stocks}")
+        print(f"开始处理卖出订单，卖出列表: {my_context.sell_stocks}")
 
         for position in positions:
             stock_code = f"{position.m_strInstrumentID}.{position.m_strExchangeID}"
             available_volume = position.m_nCanUseVolume  # 可用数量
 
             # 检查是否在卖出列表中
-            if stock_code in context.sell_stocks and available_volume > 0:
+            if stock_code in my_context.sell_stocks and available_volume > 0:
                 try:
                     # 执行卖出订单
                     FileManager.write_order_log(TradingStatus.ORDER_SELL, stock_code, available_volume, 0)
-                    passorder(TradingStatus.ORDER_SELL, 1101, context.account, stock_code, 5, 0, available_volume, 2, C)
+                    passorder(TradingStatus.ORDER_SELL, 1101, my_context.account, stock_code, 5, 0, available_volume, 2,
+                              C)
                     print(f"卖出成功: {stock_code} 数量: {available_volume}")
 
                 except Exception as e:
@@ -350,15 +349,15 @@ def process_sell_orders(C, context):
         print(f"处理卖出订单出错: {e}")
 
 
-def process_stock_orders(C, context, trading_phase):
+def process_stock_orders(C, my_context, trading_phase):
     """处理股票买入订单"""
     try:
         # 取消旧订单
-        OrderManager.cancel_timeout_orders(context, trading_phase)
+        OrderManager.cancel_timeout_orders(my_context, trading_phase)
 
         # 获取股票信息和账户信息
-        stock_info = C.get_full_tick(context.buy_stocks)
-        accounts = get_trade_detail_data(context.account, 'stock', 'account')
+        stock_info = C.get_full_tick(my_context.buy_stocks)
+        accounts = get_trade_detail_data(my_context.account, 'stock', 'account')
 
         if not accounts:
             return
@@ -367,18 +366,21 @@ def process_stock_orders(C, context, trading_phase):
         print(f"{trading_phase} - 可用资金: {available_money:.2f}")
 
         # 遍历股票列表进行买入
-        for i, stock_code in enumerate(context.buy_stocks):
+        for i, stock_code in enumerate(my_context.buy_stocks):
             if available_money < Config.KEEP_MONEY:
                 print(f"{trading_phase} - 资金不足")
                 break
 
-            if not context.is_stock_available(i):
+            if not my_context.is_stock_available(i):
+                print(f"{stock_code} 股票状态不可用，跳过买入")
                 continue
 
             if stock_code not in stock_info:
+                print(f"{stock_code} 没查到价格信息")
                 continue
 
             # 检查买入条件
+            print("开始买入")
             valid, reason = TradingValidator.validate_buy_condition(C, stock_code, stock_info[stock_code],
                                                                     trading_phase)
             if not valid:
@@ -387,7 +389,7 @@ def process_stock_orders(C, context, trading_phase):
 
             # 执行买入
             success, available_money, message = execute_buy_order(
-                C, context, stock_code, stock_info[stock_code], trading_phase, available_money
+                C, my_context, stock_code, stock_info[stock_code], trading_phase, available_money
             )
             print(f"{trading_phase} - {stock_code} {message}")
 
@@ -395,7 +397,7 @@ def process_stock_orders(C, context, trading_phase):
         print(f"处理股票订单出错: {e}")
 
 
-def process_reverse_repo(C, context):
+def process_reverse_repo(C, my_context):
     """处理逆回购"""
     if not Config.USE_REVERSE_REPO:
         return
@@ -434,6 +436,16 @@ def process_reverse_repo(C, context):
             print(f"逆回购处理失败: {e}")
 
 
+def init(C):
+    """系统初始化"""
+    print('策略启动')
+    C.my_context = TradingContext()
+    C.my_context.reset()
+    C.set_account(C.my_context.account)
+    print("初始化完成")
+    C.run_time("myHandlebar", "3nSecond", "2023-06-20 13:20:00")
+
+
 def myHandlebar(C):
     """主处理函数"""
     now = datetime.datetime.now()
@@ -442,35 +454,40 @@ def myHandlebar(C):
     # 周末不交易
     if now.isoweekday() > 5:
         return
-
+    print("")
+    print("*************************************")
     print(f'当前时间: {now.strftime("%H:%M:%S")}')
 
     # 每日数据初始化
     if '091500' <= current_time < '091510':
-        if hasattr(C, 'context'):
-            C.context.reset()
+        if hasattr(C, 'my_context'):
+            C.my_context.reset()
         print("数据已重置")
 
     # 确保有交易上下文
-    if not hasattr(C, 'context'):
-        C.context = TradingContext()
+    if not hasattr(C, 'my_context'):
+        C.my_context = TradingContext()
 
     # 读取股票列表（只在第一次或重置后执行）
-    if not C.context.buy_stocks and not C.context.sell_stocks:
-        load_stock_data(C, C.context)
+    if not C.my_context.buy_stocks and not C.my_context.sell_stocks:
+        print("开始读取股票数据")
+        load_stock_data(C, C.my_context)
 
     # 更新股票状态
-    refresh_stock_status(C.context)
+    print("开始刷新股票状态")
+    refresh_stock_status(C.my_context)
 
     # 优先执行卖出逻辑（在交易时间内）
     if '093000' <= current_time <= '150000':
-        process_sell_orders(C, C.context)
+        print("开始卖出交易")
+        process_sell_orders(C, C.my_context)
 
     # 根据时间段执行不同的交易策略（买入）
     for start_time, end_time, trading_phase in Config.TRADING_SCHEDULES:
         if start_time <= current_time <= end_time:
-            process_stock_orders(C, C.context, trading_phase)
+            print(f"开始买入交易：{trading_phase}")
+            process_stock_orders(C, C.my_context, trading_phase)
             break
 
     # 处理逆回购
-    process_reverse_repo(C, C.context)
+    process_reverse_repo(C, C.my_context)
